@@ -18,3 +18,5 @@ df2 = pd.read_csv('003_pick_data.csv', names=['SKU', 'Warehouse Section', 'Origi
 # based on the time stamps. Trying to arrange the data a bit better
 sorted_df2 = df2.sort_values(by=['Order No', 'Date'])
 print(sorted_df2.head())
+#
+# new commit on github
