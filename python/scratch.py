@@ -22,3 +22,4 @@ print(sorted_df2.head())
 # To print all rows corresponding to the specified SKU
 skus = ['A80704', '387126', '283136']
 print(df[df['SKU'].isin(skus)])
+# extra comment
