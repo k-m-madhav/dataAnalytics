@@ -52,6 +52,43 @@ print(sorted_df2.describe().T)
 print(sorted_df2[sorted_df2['Pick Volume'] < 0])
 print(sorted_df2[sorted_df2['Pick Volume'] < 0].nunique())
 
+# "Not really needed. Was doing some analysis to understand 
+# how many Order No.s have multiple -ve Pick Vol"
+# negative_pick_volume_df = sorted_df2[sorted_df2['Pick Volume'] < 0]
+# order_no_counts = negative_pick_volume_df['Order No'].value_counts()
+# non_unique_order_no = order_no_counts[order_no_counts > 1]
+# print(non_unique_order_no)
+
+## Cleaning -ve Pick Volume ##
+pick_volume = 'Pick Volume'
+negative_indices = sorted_df2.index[sorted_df2[pick_volume] < 0].to_list() # storing all indices that have -ve Pick Vol in a list
+print(len(negative_indices))
+
+combined_rows = [] # not required
+rows_to_combine = [] # not required
+missed_indices = [] # All the indices which didn't match the "Condition" are stored in this list
+for index in negative_indices:
+    if index > 0: # a useful validation but doesn't affect our case
+       row_above = sorted_df2.loc[index - 1] # The row which is literally above the one that has -ve pick vol
+       negative_row = sorted_df2.loc[index] # The row with -ve pick vol
+
+       if(row_above.drop(labels=pick_volume).equals(negative_row.drop(labels=pick_volume))): # "Condition" to validate if all other variables (column values) except Pick Vol are an exact match
+        rows_to_combine.append((row_above, negative_row)) # not really required, created it for tracking
+        combined_row = row_above.copy()
+        combined_row[pick_volume] = row_above[pick_volume] + negative_row[pick_volume]
+        sorted_df2.loc[index - 1] = combined_row # replacing "row_above" with "combined_row"
+        combined_rows.append(combined_row) # again, created for tracking purpose
+       else:
+          missed_indices.append(index)
+
+negative_indices_removed = list(set(negative_indices) ^ set(missed_indices)) # Removing the common elements between two lists (85 indices)
+sorted_df2 = sorted_df2.drop(index=negative_indices_removed).reset_index(drop=True) # Dropping all indices from the dataframe that matched the "Condition"
+print(sorted_df2[sorted_df2['Pick Volume'] < 0].info()) # 85 rows less than what we started with
+
+# print(missed_indices) count = 15
+# print(sorted_df2.loc[31355201])
+# print(sorted_df2[sorted_df2['Order No'] == '03014512'])
+
 ## EDA Univariate Analysis ## 
 # Analyzing/visualizing the dataset by taking one variable at a time
 
