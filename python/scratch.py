@@ -33,12 +33,13 @@ print(sorted_df2.head())
 # skus = ['A80704', '387126', '283136']
 # print(df[df['SKU'].isin(skus)])
 
-# Gives info about the datatype of the variables (columns)
-print(sorted_df2.info())
+print(sorted_df2.info()) # Gives info about the datatype of the variables (columns)
 
 # Gives info on how many unique values are present for each column
 # ex: Warehouse Section = 5, Origin = 2 and so on
 print(sorted_df2.nunique())
+
+print(sorted_df2['SKU'].value_counts()) # To see unique items of a column and their counts
 
 # sorted_df2.isnull().sum() is used to get the number of missing records in each column
 print(sorted_df2.isnull().sum())
@@ -59,7 +60,7 @@ print(sorted_df2[sorted_df2['Pick Volume'] < 0].nunique())
 # non_unique_order_no = order_no_counts[order_no_counts > 1]
 # print(non_unique_order_no)
 
-## Cleaning -ve Pick Volume ##
+## ------ Cleaning -ve Pick Volume ------ ##
 pick_volume = 'Pick Volume'
 negative_indices = sorted_df2.index[sorted_df2[pick_volume] < 0].to_list() # storing all indices that have -ve Pick Vol in a list
 print(len(negative_indices))
@@ -81,6 +82,9 @@ for index in negative_indices:
        else:
           missed_indices.append(index)
 
+# Create a DataFrame from the combined rows
+# combined_df = pd.DataFrame(combined_rows)
+
 negative_indices_removed = list(set(negative_indices) ^ set(missed_indices)) # Removing the common elements between two lists (85 indices)
 sorted_df2 = sorted_df2.drop(index=negative_indices_removed).reset_index(drop=True) # Dropping all indices from the dataframe that matched the "Condition"
 print(sorted_df2[sorted_df2['Pick Volume'] < 0].info()) # 85 rows less than what we started with
@@ -89,7 +93,115 @@ print(sorted_df2[sorted_df2['Pick Volume'] < 0].info()) # 85 rows less than what
 # print(sorted_df2.loc[31355201])
 # print(sorted_df2[sorted_df2['Order No'] == '03014512'])
 
-## EDA Univariate Analysis ## 
+## ------ End of 'Cleaning -ve Pick Volume' ------ ##
+
+
+## ------ To get the Number of Picks per Year 
+# by Warehouse Section (Approach 1) [Not the best] ------ ##
+sorted_df2['Date'] = pd.to_datetime(sorted_df2['Date'])
+print(sorted_df2.info())
+
+# Count picks per order number and warehouse section
+pick_counts = sorted_df2.groupby(['Order No', 'Warehouse Section']).size().reset_index(name='pick_count')
+print(pick_counts.head())
+print(sorted_df2[sorted_df2['Order No'] == '01000002'])
+
+# Now aggregate the start and end timestamps
+timestamp_agg = sorted_df2.groupby(['Order No', 'Warehouse Section']).agg(
+    start_timestamp=('Date', 'min'),
+    end_timestamp=('Date', 'max')
+).reset_index()
+print(timestamp_agg.head())
+
+# Merge the two DataFrames to get pick counts with timestamps
+aggregated_df = pd.merge(timestamp_agg, pick_counts, on=['Order No', 'Warehouse Section'])
+print(aggregated_df.head())
+
+# Extract the start year
+aggregated_df['start_year'] = aggregated_df['start_timestamp'].dt.year
+
+# Aggregate the counts by year and warehouse section
+yearly_counts = aggregated_df.groupby(['start_year', 'Warehouse Section']).agg(
+    order_count=('pick_count', 'sum')  # Sum the pick counts for each year and warehouse section
+).reset_index()
+print(yearly_counts.head())
+
+# Create a bar plot
+plt.figure(figsize=(12, 6))
+sns.barplot(data=yearly_counts, x='start_year', y='order_count', hue='Warehouse Section')
+plt.title('Number of Picks per Year by Warehouse Section')
+plt.xlabel('Year')
+plt.ylabel('Number of Picks')
+plt.legend(title='Warehouse Section')
+plt.show()
+
+## ------ End of 'Number of Picks per Year by Warehouse Section (Approach 1)' ------ ##
+
+
+## ------ Monthly and Quarterly Analysis of the No. of Picks per WH Section (Approach 2) ------ ##
+sorted_df2['Year'] = sorted_df2['Date'].dt.year
+sorted_df2['Month'] = sorted_df2['Date'].dt.month # For monthly aggregation
+sorted_df2['Quarter'] = sorted_df2['Date'].dt.to_period('Q') # For quarterly aggregation
+sorted_df2.info()
+
+monthly_picks = sorted_df2.groupby(['Year', 'Month', 'Warehouse Section']).size().reset_index(name='Picks')
+print(monthly_picks.head())
+
+quarterly_picks = sorted_df2.groupby(['Year', 'Quarter', 'Warehouse Section']).size().reset_index(name='Picks')
+print(quarterly_picks.head())
+
+#monthly_pivot = monthly_picks.pivot_table(index=['Year', 'Month'], columns='Warehouse Section', values='Picks', fill_value=0)
+#quarterly_pivot = quarterly_picks.pivot_table(index=['Year', 'Quarter'], columns='Warehouse Section', values='Picks', fill_value=0)
+
+## ------ End of 'Approach 2' ------ ##
+
+
+##  ------ Fix the Repeating Order Numbers by creating Unique Order Numbers 
+# based on the assumption that an order is assumed to be completed within 5 days ------ ##
+
+#sorted_df2['Date'] = pd.to_datetime(sorted_df2['Date']) already done somewhere above so commenting
+pick_data = sorted_df2.copy(deep=True) # creating a separate copy of sorted_df2 DF. This new DF will have the 'Unique Order No' column
+
+#pick_data = pick_data.sort_values(by=['Order No', 'Date']).reset_index(drop=True) This sort needs to be done for faster calc. It's already done above so commenting out
+pick_data['Time Difference'] = pick_data.groupby('Order No')['Date'].diff().dt.days # Calculate the time difference between consecutive rows within each Order Number group (Took 37m 5.6s to execute)
+
+# Fastest approach acc to chat-gpt (but didn't test it out)
+# # Calculate time difference directly using shift on sorted data
+# pick_data['Time Difference'] = (pick_data['Date'] - pick_data['Date'].shift()).dt.days
+# # Reset differences to NaN where Order No changes
+# pick_data['Time Difference'] = pick_data['Time Difference'].where(
+#     pick_data['Order No'] == pick_data['Order No'].shift()
+# )
+
+#print(pick_data[pick_data['Order No'] == '01000002'])
+time_diffs = pick_data['Time Difference'].dropna() # Drop NaN values (first occurrence in each group)
+print(time_diffs.value_counts().sort_index())
+time_diffs_non_0_days = time_diffs[time_diffs != 0.0] # filters out all entries where the value is 0.0
+freq_non_0_days = time_diffs_non_0_days.value_counts().sort_index()
+
+# Plotting a distribution of time differences excl 0
+plt.figure(figsize=(10, 6))
+plt.hist(time_diffs_non_0_days, bins=10, color='skyblue', edgecolor='black')
+plt.xlabel('Days Between Orders')
+plt.ylabel('Frequency')
+plt.title('Distribution of Time Differences Between Orders (Excl 0)')
+plt.show()
+
+threshold_days = 5 # Set the threshold in days (to differentiate legitimate order repeats from duplicates) (Chat-GPT recommends to assume that an order takes 5 days to complete)
+pick_data['New Version Flag'] = (pick_data['Time Difference'] > threshold_days).fillna(False) # Create a flag where time difference is greater than threshold (indicating a new version)
+#print(pick_data[pick_data['Order No'] == '01000002'])
+pick_data['Version'] = pick_data.groupby('Order No')['New Version Flag'].cumsum() + 1 # Calculate the cumulative sum of the new version flag to create a version counter within each Order Number
+pick_data['Unique Order No'] = pick_data['Order No'].astype(str) + "_v" + pick_data['Version'].astype(str) # Creating the Unique Order No column using the Order Number and Version 
+pick_data = pick_data.drop(columns=['Time Difference', 'New Version Flag', 'Version']) # Dropping the temporary columns
+#print(pick_data[pick_data['Order No'] == '01000002'])
+pick_data = pick_data.sort_values(by=['Unique Order No', 'Date']).reset_index(drop=True) # Sort by 'Unique Order No' and 'Date'
+#print(pick_data.nunique())
+
+## ------ End of 'Fix the Repeating Order No by creating Unique Order No' ------ ##
+
+
+## ------ EDA Univariate Analysis ------ ## 
+
 # Analyzing/visualizing the dataset by taking one variable at a time
 
 # Separating Numerical and Categorical variables for easy analysis
