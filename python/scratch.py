@@ -7,10 +7,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Load the CSV files
-df = pd.read_csv('002_product_data.csv', encoding='latin1')
 df = pd.read_csv('002_product_data.csv', names=['SKU', 'Description', 'Product Group'], header=None, encoding='latin1')
-
-df2 = pd.read_csv('003_pick_data.csv', encoding='latin1', low_memory=False)
 df2 = pd.read_csv('003_pick_data.csv', names=['SKU', 'Warehouse Section', 'Origin', 'Order No', 'Position in Order', 'Pick Volume', 'Unit', 'Date'], header=None, encoding='latin1', low_memory=False)
 
 # Display the first few rows of the DataFrame
@@ -198,6 +195,31 @@ pick_data = pick_data.sort_values(by=['Unique Order No', 'Date']).reset_index(dr
 #print(pick_data.nunique())
 
 ## ------ End of 'Fix the Repeating Order No by creating Unique Order No' ------ ##
+
+
+## ----- Merging the Datasets ----- ##
+merged_df = pd.merge(pick_data, df, on='SKU', how='left') # A left join includes all rows from the left DataFrame (pick_data), and matched rows from the right DataFrame (df). If there's no match, NaN values are filled in for columns from the second datframe, df.
+print(merged_df.isnull().sum())
+null_rows_product_group = merged_df[merged_df['Product Group'].isnull()] # Show rows with Product Group being null
+print(null_rows_product_group)
+
+## ----- End of 'Merging the Datasets' ----- ##
+
+
+## ----- Creating a new DF called 'unique_order_details' ----- ##
+
+# Grouping by 'Unique Order No' and getting the first and last timestamp for each order
+unique_order_details = pick_data.groupby('Unique Order No').agg(
+    Start_Time=('Date', 'first'),  # First timestamp for each order
+    End_Time=('Date', 'last')      # Last timestamp for each order
+).reset_index()
+
+## ++ Enter your code here! ++ ##
+
+
+## ++ Enter your code here! ++ ##
+
+## ----- End of 'unique_order_details DF' ----- ##
 
 
 ## ------ EDA Univariate Analysis ------ ## 
