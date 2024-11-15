@@ -7,7 +7,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Load the CSV files
-df = pd.read_csv('002_product_data.csv', names=['SKU', 'Description', 'Product Group'], header=None, encoding='latin1')
+df = pd.read_csv('002_product_data.csv', names=['SKU', 'Description', 'Product Group'], header=None, encoding='latin1', engine='python', error_bad_lines=False, quoting=3)
 df2 = pd.read_csv('003_pick_data.csv', names=['SKU', 'Warehouse Section', 'Origin', 'Order No', 'Position in Order', 'Pick Volume', 'Unit', 'Date'], header=None, encoding='latin1', low_memory=False)
 
 # Display the first few rows of the DataFrame
@@ -220,6 +220,34 @@ unique_order_details = pick_data.groupby('Unique Order No').agg(
 ## ++ Enter your code here! ++ ##
 
 ## ----- End of 'unique_order_details DF' ----- ##
+
+
+## ----- Product Group Correlations ----- ##
+# pip install -U mlxtend (to update the mlxtend library)
+
+# Step 1: Sample 100,000 unique orders
+subset_df = merged_df[merged_df['Unique Order No'].isin(
+    merged_df['Unique Order No'].drop_duplicates().sample(100000, random_state=42)
+)]
+
+# Step 2: Remove duplicates of (Order Number, Product Group) pairs
+subset_df = subset_df.drop_duplicates(subset=['Unique Order No', 'Product Group'])
+print(subset_df.head())
+
+# Step 3: One-hot encode the Product Group per Order Number
+one_hot_encoded_df = subset_df.groupby('Unique Order No')['Product Group'].apply(lambda x: pd.Series(1, index=x)).unstack(fill_value=0) ## took approx 45 mins to execute
+print(one_hot_encoded_df.head())
+
+# Step 4: Run Apriori and association rules
+from mlxtend.frequent_patterns import apriori, association_rules
+frequent_itemsets = apriori(one_hot_encoded_df, min_support=0.01, use_colnames=True)
+# rules = association_rules(frequent_itemsets, metric="lift", min_threshold=1.0) # ideally, we should be using this but didn't work
+rules = association_rules(frequent_itemsets, metric="lift", min_threshold=1.0, num_itemsets=len(frequent_itemsets)) # compatible with the old mlxtend version
+
+# Display the rules (for quick testing, just the first few rows)
+print(rules[['antecedents', 'consequents', 'support', 'confidence', 'lift']].head())
+
+## ----- End of 'Product Group Correlations' ----- ##
 
 
 ## ------ EDA Univariate Analysis ------ ## 
