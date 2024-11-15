@@ -237,6 +237,23 @@ unique_order_details['Pick Count'] = unique_order_details['Unique Order No'].map
 unique_order_details['Unique Warehouse Count'] = unique_order_details['Unique Warehouse Sections'].apply(
     lambda x: len(x.split(', ')) if isinstance(x, str) else 0
 )
+
+# Add a new column with Unique SKUs in 2 steps
+# Step 1: Aggregate unique SKUs for each Unique Order No
+unique_skus = (
+    pick_data.groupby('Unique Order No')['SKU']
+    .unique()
+    .apply(lambda x: ', '.join(sorted(x)))  # Convert to a comma-separated string
+)
+# Step 2: Add the new column to unique_order_details
+unique_order_details['Unique SKUs'] = unique_order_details['Unique Order No'].map(unique_skus)
+
+# Add a new column that counts the number of unique SKUs per order
+# Step 1: Count the number of unique SKUs in each order
+unique_order_details['Unique SKU Count'] = unique_order_details['Unique SKUs'].apply(
+    lambda x: len(x.split(', ')) if isinstance(x, str) else 0
+)
+
 ## ++ Enter your code here! ++ ##
 
 ## ----- End of 'unique_order_details DF' ----- ##
