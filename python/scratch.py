@@ -215,8 +215,28 @@ unique_order_details = pick_data.groupby('Unique Order No').agg(
 ).reset_index()
 
 ## ++ Enter your code here! ++ ##
+# Add a new column with Unique warehouse sections in 2 steps
+# Step 1: Aggregate unique Warehouse Sections for each Unique Order No
+unique_warehouse_sections = (
+    pick_data.groupby('Unique Order No')['Warehouse Section']
+    .unique()
+    .apply(lambda x: ', '.join(sorted(x)))  # Convert to a comma-separated string
+)
+# Step 2: Add the new column to unique_order_details
+unique_order_details['Unique Warehouse Sections'] = unique_order_details['Unique Order No'].map(unique_warehouse_sections)
 
+# Add a new column with pick count per order in 2 steps
+# Step 1: Count the number of rows per Unique Order No in pick_data
+order_row_counts = pick_data.groupby('Unique Order No').size()
 
+# Step 2: Add the new column to unique_order_details
+unique_order_details['Pick Count'] = unique_order_details['Unique Order No'].map(order_row_counts)
+
+# Add a new column that counts the number of unique warehouses per order
+# Step 1: Count the number of unique warehouse sections in each order
+unique_order_details['Unique Warehouse Count'] = unique_order_details['Unique Warehouse Sections'].apply(
+    lambda x: len(x.split(', ')) if isinstance(x, str) else 0
+)
 ## ++ Enter your code here! ++ ##
 
 ## ----- End of 'unique_order_details DF' ----- ##
