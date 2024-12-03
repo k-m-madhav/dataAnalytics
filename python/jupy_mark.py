@@ -13,6 +13,36 @@ df = pd.read_csv('002_product_data.csv', names=['SKU', 'Description', 'Product_G
 df2 = pd.read_csv('003_pick_data.csv', names=['SKU', 'Warehouse_Section', 'Origin', 'Order_No', 'Position_in_Order', 'Pick_Volume', 'Unit', 'Date'], header=None, encoding='latin1', low_memory=False)
 
 # %%
+## ----- Handling Mixed Datatypes ----- ##
+# print(df2['Warehouse_Section'].apply(type).value_counts()) O/P: <class 'str'>    33888990
+df2[['Warehouse_Section', 'Unit']] = df2[['Warehouse_Section', 'Unit']].astype('string')  #pandas' StringDtype ('string') is recommended for better memory efficiency and optimized string operations
+df2['Date'] = pd.to_datetime(df2['Date'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
+df2[['SKU', 'Order_No']] = df2[['SKU', 'Order_No']].astype('string')
+
+# print(df2['SKU'].nunique() == df2['SKU'].str.lower().nunique()) #True
+# print(df2['Order_No'].nunique() == df2['Order_No'].str.lower().nunique()) #True
+# df2['SKU_cleaned'] = df2['SKU'].str.strip().str.replace(r'\s+', ' ', regex=True)
+# print((df2['SKU'] == df2['SKU_cleaned']).all()) #True
+# print((df2['Order_No'] == df2['Order_No_cleaned']).all()) #True
+## ----- End of 'Handling Mixed Datatypes' ----- ##
+
+# %%
+## ----- SKU and Unit inconsistency ----- ##
+# Group by 'SKU' and get unique 'Unit' values
+unit_inconsistencies = df2.groupby('SKU')['Unit'].unique()
+
+# Filter SKUs that have more than one unique 'Unit', sort the units and then create the summary with both unique units and their counts
+inconsistent_skus_summary = pd.DataFrame({
+    'Unique_Units': unit_inconsistencies[unit_inconsistencies.apply(lambda x: len(x) > 1)]
+                            .apply(lambda x: sorted(list(x))),  # Sort units to avoid discrepancies such as [Mt,St] and [St,Mt] being considered as two unique combinations
+    'Count_of_Unique_Units': unit_inconsistencies[unit_inconsistencies.apply(lambda x: len(x) > 1)]
+                            .apply(lambda x: len(x))  # Count the unique units # All values are 2
+})
+print(inconsistent_skus_summary['Unique Units'].value_counts()) # other unit combinations seem fine except [Mt,St] and it has a freq of 7
+
+## ----- End of 'SKU and Unit inconsistency' ----- ##
+
+# %%
 ## ----- Cleaning Product Data dataset ----- ##
 print(df.isnull().sum()) # didn't find any null values because it considered "" i.e. Empty String in Description as a valid entry
 print(df.nunique()) # SKU = 2199644, Description = 1422864, Product_Group = 18
@@ -21,6 +51,7 @@ df['Description'] = df['Description'].str.strip('"') # Strip any leading or trai
 
 descriptions_with_multiple_skus = df.groupby('Description')['SKU'].nunique()
 descriptions_with_multiple_skus = descriptions_with_multiple_skus[descriptions_with_multiple_skus > 1]
+
 ## ----- End of 'Cleaning Product Data dataset' ----- ## 
 
 # %%
@@ -32,7 +63,6 @@ df2_transformed = df2.drop_duplicates()
 
 # %%
 ##  ------ Fix the Repeating Order Numbers by creating Unique Order Numbers ------ ##
-df2_transformed['Date'] = pd.to_datetime(df2_transformed['Date'])
 df2_transformed = df2_transformed.sort_values(by=['Order_No', 'Date']).reset_index(drop=True) # Sort by 'Unique_Order_No' and 'Date'
 
 # %%
@@ -48,8 +78,8 @@ df2_transformed['Time_Difference'] = df2_transformed['Time_Difference'].where(
 print(df2_transformed[df2_transformed['Order_No'] == '01000002'])
 
 # %%
-time_diffs = df2_transformed['Time Difference'].dropna()
-print(time_diffs.value_counts().sort_index())
+time_diffs = df2_transformed['Time_Difference'].dropna()
+#print(time_diffs.value_counts().sort_index())
 time_diffs_non_0_days = time_diffs[time_diffs != 0.0] # filters out all entries where the value is 0.0
 freq_non_0_days = time_diffs_non_0_days.value_counts().sort_index()
 
@@ -151,7 +181,11 @@ print(len(negative_indices))
 missed_indices = [] # All the indices which didn't match the "Condition" are stored in this list
 missed_indices_sum_0 = [] # All the indices which matched the "Condition" but the sum of Pick_Volume equalled 0
 indices_to_drop = [] # List to collect indices that need to be dropped
-columns_to_drop_before_compare = df2_transformed.columns.difference([pick_volume, 'Pick_Positive_Flag', 'Pick_Zero_Flag'])
+unique_order_nos_condition_failed = []
+unique_order_nos_pick_volume_sum_0 = []
+unique_order_nos_dropped = []
+
+columns_to_drop_before_compare = df2_transformed.columns.difference([pick_volume, 'Pick_Vol_Positive_Flag', 'Pick_Vol_Zero_Flag'])
 
 for index in negative_indices:
     if index > 0:  # Ensure there's a row above to compare with
@@ -165,10 +199,13 @@ for index in negative_indices:
             if combined_pick_volume > 0:
                 df2_transformed.at[index - 1, pick_volume] = combined_pick_volume # Update the pick_volume for the row_above
                 indices_to_drop.append(index) # Add the index of the negative pick_volume row to the drop list
+                unique_order_nos_dropped.append(df2_transformed.at[index, 'Unique_Order_No'])  # Store the Unique_Order_No for the row being dropped
             else:
-                missed_indices_sum_0.append(index) # Track where combined pick_volume is <= 0
+                missed_indices_sum_0.append(index) # Track where combined Pick_Volume is <= 0
+                unique_order_nos_pick_volume_sum_0.append(df2_transformed.at[index, 'Unique_Order_No'])  # Store the Unique_Order_No for the row where combined Pick_Volume <= 0
         else:
             missed_indices.append(index) # Track rows where they don't match
+            unique_order_nos_condition_failed.append(df2_transformed.at[index, 'Unique_Order_No'])  # Store the Unique_Order_No where the 'Condition' failed
 
 # %%
 df2_transformed = df2_transformed.drop(indices_to_drop) # Drop rows based on indices
@@ -217,8 +254,7 @@ print(unique_order_details.head())
 # Step 1: Aggregate unique Warehouse_Sections for each Unique_Order_No
 unique_warehouse_sections = (
     df2_transformed.groupby('Unique_Order_No')['Warehouse_Section']
-    .unique()
-    .apply(lambda x: ', '.join(sorted(x)))  # Convert to a comma-separated string
+    .agg(lambda x: ', '.join(x.unique()))  # Get unique Warehouse_Sections as a comma-separated string
 )
 # Step 2: Add the new column to unique_order_details
 unique_order_details['Unique_Warehouse_Sections'] = unique_order_details['Unique_Order_No'].map(unique_warehouse_sections)
@@ -234,17 +270,14 @@ unique_order_details['Pick_Count'] = unique_order_details['Unique_Order_No'].map
 # %%
 # Add a new column that counts the number of unique warehouses per order
 # Step 1: Count the number of unique warehouse sections in each order
-unique_order_details['Unique_Warehouse_Count'] = unique_order_details['Unique_Warehouse_Sections'].apply(
-    lambda x: len(x.split(', ')) if isinstance(x, str) else 0
-)
+unique_order_details['Unique_Warehouse_Count'] = unique_order_details['Unique_Warehouse_Sections'].str.split(', ').str.len().fillna(0).astype(int)
 
 # %%
 # Add a new column with Unique SKUs in 2 steps
-# Step 1: Aggregate unique SKUs for each Unique_Order_No
+# Step 1: Aggregate unique SKUs for each Unique_Order_No 8m 32.9s
 unique_skus = (
     df2_transformed.groupby('Unique_Order_No')['SKU']
-    .unique()
-    .apply(lambda x: ', '.join(sorted(x)))  # Convert to a comma-separated string
+    .agg(lambda x: ', '.join(x.unique()))  # Get unique SKUs as a comma-separated string
 )
 # Step 2: Add the new column to unique_order_details
 unique_order_details['Unique_SKUs'] = unique_order_details['Unique_Order_No'].map(unique_skus)
@@ -252,6 +285,4 @@ unique_order_details['Unique_SKUs'] = unique_order_details['Unique_Order_No'].ma
 # %%
 # Add a new column that counts the number of unique SKUs per order
 # Step 1: Count the number of unique SKUs in each order
-unique_order_details['Unique_SKU_Count'] = unique_order_details['Unique_SKUs'].apply(
-    lambda x: len(x.split(', ')) if isinstance(x, str) else 0
-)
+unique_order_details['Unique_SKU_Count'] = unique_order_details['Unique_SKUs'].str.split(', ').str.len().fillna(0).astype(int)
