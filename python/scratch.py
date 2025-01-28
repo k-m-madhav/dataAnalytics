@@ -141,7 +141,7 @@ df2_transformed = df2.drop_duplicates()
 
 ## ----- New Approach for Unique_Order_No ----- ##
 # Finalized approach
-def generate_unique_order_no(df, time_gap_threshold, large_gap_threshold_months=11):
+def generate_unique_order_no(df, time_gap_threshold, large_gap_threshold_months=2):
     """
     This fn is to generate unique order no.s and the params are ...
     """
